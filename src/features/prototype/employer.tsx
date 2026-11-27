@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router";
+import posthog from "posthog-js";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FormSelect } from "@/components/ui/form-select";
+import { workflowLogger } from "@/app/posthog-logger";
 import {
   categoryLabels,
   functionLabels,
@@ -16,6 +18,10 @@ import { currentPerson, jobSchema } from "./model";
 import { usePrototype } from "./store";
 import { Field } from "./workspace";
 import { Empty, NotFound, PageTitle } from "./shell";
+
+const posthogConfigured = Boolean(
+  import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN && import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
+);
 
 export function EmployerJobs() {
   const { state } = usePrototype();
@@ -133,7 +139,26 @@ export function EmployerJobEditor() {
       );
       return;
     }
-    if (run({ type: "publish", job: parsed.data })) navigate("/app/oferty");
+    if (run({ type: "publish", job: parsed.data })) {
+      if (posthogConfigured)
+        posthog.capture("job_published", {
+          is_new: !existing,
+          category: parsed.data.category,
+          remote_status: parsed.data.remoteStatus,
+          seniority: parsed.data.seniority,
+          contract: parsed.data.contract,
+          used_ai_description: Boolean(parsed.data.generatedDescription),
+        });
+      workflowLogger.info("job publication completed", {
+        is_new: !existing,
+        category: parsed.data.category,
+        remote_status: parsed.data.remoteStatus,
+        seniority: parsed.data.seniority,
+        contract: parsed.data.contract,
+        used_ai_description: Boolean(parsed.data.generatedDescription),
+      });
+      navigate("/app/oferty");
+    }
   }
   return (
     <>
@@ -171,6 +196,7 @@ export function EmployerJobEditor() {
                 `${title}\n\nO roli\n${source.trim().slice(0, 10000)}\n\nJak pracujemy\nŁączymy potrzeby użytkowników, odpowiedzialne wykorzystanie AI i mierzalne efekty.\n\nProces rekrutacji\nPrześlij aplikację i opowiedz o projekcie, w którym Twoje decyzje wpłynęły na wynik.`,
               );
               setApproved(false);
+              if (posthogConfigured) posthog.capture("ai_job_description_generated");
             }}
           >
             Przygotuj opis z AI
