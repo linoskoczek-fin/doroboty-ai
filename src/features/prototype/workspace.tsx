@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router";
+import posthog from "posthog-js";
 import { CheckCircle2, FileText } from "lucide-react";
 import { ConfettiBurst, type ConfettiOrigin } from "@/components/confetti-burst";
 import { BackLink } from "@/components/back-link";
@@ -9,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { JobCard } from "@/features/jobs/job-card";
 import { ApplicationOfferPreview } from "@/features/jobs/application-offer-preview";
+import { workflowLogger } from "@/app/posthog-logger";
 import { usePrototype } from "./store";
 import { currentPerson, publishedJobs, stageLabels, MIN_APPLICATION_ANSWER_LENGTH } from "./model";
 import { PageTitle, Empty, NotFound, Notice } from "./shell";
@@ -16,6 +18,10 @@ import { CvAttachment } from "./cv-attachment";
 import { MatchScore } from "./match-score";
 import { RecruitingApplication } from "./recruiting-application";
 import { CandidateApplication } from "./candidate-application";
+
+const posthogConfigured = Boolean(
+  import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN && import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
+);
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -51,6 +57,7 @@ export function PersonPicker() {
               variant="outline"
               onClick={() => {
                 run({ type: "select_person", id: person.id });
+                if (posthogConfigured) posthog.capture("person_selected", { role: person.role });
                 navigate(
                   person.role === "candidate"
                     ? (safeNext ?? "/app")
@@ -156,8 +163,10 @@ export function ProfilePage({ preview = false }: { preview?: boolean }) {
           location: String(data.get("location")),
         },
       })
-    )
+    ) {
+      if (posthogConfigured) posthog.capture("profile_updated", { role: person.role });
       setMessage("Profil został zapisany.");
+    }
   }
   return (
     <>
@@ -282,6 +291,17 @@ export function ApplyPage() {
       return;
     }
     if (run({ type: "submit", jobId: job!.id, notes, generated, answer, consent })) {
+      if (posthogConfigured)
+        posthog.capture("application_submitted", {
+          job_category: job!.category,
+          seniority: job!.seniority,
+          remote_status: job!.remoteStatus,
+        });
+      workflowLogger.info("application submission completed", {
+        job_category: job!.category,
+        seniority: job!.seniority,
+        remote_status: job!.remoteStatus,
+      });
       submittedOnce.current = true;
       setSubmitted(true);
       if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -387,8 +407,13 @@ export function ApplyPage() {
                 disabled={submitted}
                 variant="outline"
                 onClick={() => {
-                  if (run({ type: "draft", jobId: job.id, notes, generated, answer }))
+                  if (run({ type: "draft", jobId: job.id, notes, generated, answer })) {
+                    if (posthogConfigured)
+                      posthog.capture("application_draft_saved", {
+                        has_generated_content: Boolean(generated),
+                      });
                     setMessage("Szkic został zapisany.");
+                  }
                 }}
               >
                 Zapisz szkic

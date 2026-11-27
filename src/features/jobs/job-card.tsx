@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+import posthog from "posthog-js";
 import { ArrowUpRight, Bookmark, MapPin, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePrototype } from "@/features/prototype/store";
@@ -6,6 +7,11 @@ import type { JobWithCompany } from "./types";
 import { categoryLabels, functionLabels, remoteLabels, seniorityLabels } from "./presentation";
 import { CompanyLogo } from "./company-logo";
 import { SalaryFact } from "./salary-fact";
+
+const posthogConfigured = Boolean(
+  import.meta.env.VITE_PUBLIC_POSTHOG_PROJECT_TOKEN && import.meta.env.VITE_PUBLIC_POSTHOG_HOST,
+);
+
 export function JobCard({ job, saved }: { job: JobWithCompany; saved?: boolean }) {
   const { run } = usePrototype();
   return (
@@ -49,7 +55,13 @@ export function JobCard({ job, saved }: { job: JobWithCompany; saved?: boolean }
               size="icon-sm"
               aria-label={`Zapisz ofertę: ${job.title}`}
               aria-pressed={saved}
-              onClick={() => run({ type: "toggle_saved", jobId: job.id })}
+              onClick={() => {
+                if (run({ type: "toggle_saved", jobId: job.id }) && posthogConfigured)
+                  posthog.capture("job_saved", {
+                    is_saved: !saved,
+                    job_category: job.category,
+                  });
+              }}
             >
               <Bookmark className="pp-icon" />
             </Button>
